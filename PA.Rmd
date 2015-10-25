@@ -1,0 +1,117 @@
+## Practical Machine Learning Course Project
+
+### Qi Fang
+
+
+### 1. Data loading
+```{r}
+setwd("~/Desktop/JHU/08_practicalMachineLearning")
+rm(list = ls())
+library(caret)
+library(randomForest)
+set.seed(1)
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+train <- read.csv(url(trainUrl), na.strings = c("NA", "#DIV/0!", ""))
+test <- read.csv(url(testUrl), na.strings = c("NA", "#DIV/0!", ""))
+```
+
+
+### 2. Data partition
+#### I use 60% of the "train" data as training set (ptrain) and 40% if the "train" data as validation set (pval).
+```{r}
+inTrain <- createDataPartition(y = train$classe, p = 0.6, list = FALSE)
+ptrain <- train[inTrain, ]
+pval <- train[-inTrain, ]
+```
+
+
+### 3. Data cleaning
+#### Remove the variables with near zero variance.
+```{r}
+nzv <- nearZeroVar(ptrain, saveMetrics = TRUE)
+ptrain <- ptrain[, nzv$nzv == FALSE]
+pval <- pval[, nzv$nzv == FALSE]
+```
+
+#### Remove the variables with mostly NA values (>95% of the values are labeled with NA).
+```{r}
+mostlyNA <- sapply(ptrain, function(x) mean(is.na(x))) > 0.95
+ptrain <- ptrain[, mostlyNA == FALSE]
+pval <- pval[, mostlyNA == FALSE]
+```
+
+#### Remove the first five variables that are not relavent to the prediciton of classe.
+```{r}
+names(ptrain)[1:5]
+ptrain <- ptrain[, -(1:5)]
+pval <- pval[, -(1:5)]
+```
+
+#### Note that I choose the features to be removed from only ptrain set, and the pval set is not seen, so the out-of-sample error will not be underestimated. Then I remove those features in both ptrain and pval set。
+
+
+### 4. Model building
+#### Here I build models to predict the classe from the predictors. The in-sample-error is estimated from the ptrain set and the out-sample-error is estimated from the pval set. The model with the smallest out-sample-error is selected.
+
+#### First I fit a random forest model to ptrain set, and use 3-fold cross validation tp find the optimal tuning parameters.
+```{r}
+fitControl <- trainControl(method = "cv", number = 3, verboseIter = FALSE)
+fit_rf <- train(classe ~ ., data = ptrain, method = "rf", trControl = fitControl)
+fit_rf$finalModel
+```
+#### The in-sample-error of random forest model is 0.29%
+
+#### Then I fit a gradient boosted model to ptrain set, and use 3-fold cross validation tp find the optimal tuning parameters.
+```{r, results = "hide"}
+fitControl <- trainControl(method = "cv", number = 3, verboseIter = FALSE)
+fit_boost <- train(classe ~ ., data = ptrain, method = "gbm",trControl = fitControl)
+```
+```{r}
+fit_boost
+```
+#### The in-sample-error of gradient boosted model is 1 - 0.9831011 = 1.69%. Both models show minimal error rate, and the random forest model is even better. Next, I will evaluate the two models on validation set to estimate the out-sample-error and select the best model.
+
+### 5. Model evaluation and selection
+#### I fit the models to validation set, and use the confusion matrix to examine the accuracy.
+```{r}
+## Random forest model
+preds_rf <- predict(fit_rf, newdata = pval)
+confusionMatrix(pval$classe, preds_rf)
+```
+```{r}
+## Gradient boosted model
+preds_boost <- predict(fit_boost, newdata = pval)
+confusionMatrix(pval$classe, preds_boost)
+```
+#### The accuracy of random forest model is 99.77%, and that of gradient boosted model 98.94%. Both model show excellent accuracy on the unseen validation set, and again random forest model is even better. Thus, in the following section I will fit the random forest model to the whole training set ("train") and predict the classes of testing set ("test").
+
+
+### 6. Predicting classes of testing set using random forest model
+#### Fit the random forest model to the whole training set ("train") and predict the classes of testing set ("test").
+```{r}
+nzv <- nearZeroVar(train)
+train <- train[, -nzv]
+test <- test[, -nzv]
+mostlyNA <- sapply(train, function(x) mean(is.na(x))) > 0.95
+train <- train[, mostlyNA == FALSE]
+test <- test[, mostlyNA == FALSE]
+train <- train[, -(1:5)]
+test <- test[, -(1:5)]
+fitControl <- trainControl(method = "cv", number = 3, verboseIter = FALSE)
+fit <- train(classe ~ ., data = train, method = "rf", trControl = fitControl)
+preds <- predict(fit, newdata = test)
+preds <- as.character(preds)
+```
+
+#### Finally I output the predictions.
+```{r}
+pml_write_files <- function(x) {
+  n <- length(x)
+  for(i in 1:n) {
+    filename <- paste0("problem_id_", i, ".txt")
+    write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, col.names = FALSE)
+  }
+}
+pml_write_files(preds)
+```

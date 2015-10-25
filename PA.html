@@ -1,0 +1,192 @@
+<h2 id="practical-machine-learning-course-project">Practical Machine Learning Course Project</h2>
+<h3 id="qi-fang">Qi Fang</h3>
+<h3 id="data-loading">1. Data loading</h3>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">setwd</span>(<span class="st">&quot;~/Desktop/JHU/08_practicalMachineLearning&quot;</span>)
+<span class="kw">rm</span>(<span class="dt">list =</span> <span class="kw">ls</span>())
+<span class="kw">library</span>(caret)
+<span class="kw">library</span>(randomForest)
+<span class="kw">set.seed</span>(<span class="dv">1</span>)
+trainUrl &lt;-<span class="st"> &quot;http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv&quot;</span>
+testUrl &lt;-<span class="st"> &quot;http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv&quot;</span>
+train &lt;-<span class="st"> </span><span class="kw">read.csv</span>(<span class="kw">url</span>(trainUrl), <span class="dt">na.strings =</span> <span class="kw">c</span>(<span class="st">&quot;NA&quot;</span>, <span class="st">&quot;#DIV/0!&quot;</span>, <span class="st">&quot;&quot;</span>))
+test &lt;-<span class="st"> </span><span class="kw">read.csv</span>(<span class="kw">url</span>(testUrl), <span class="dt">na.strings =</span> <span class="kw">c</span>(<span class="st">&quot;NA&quot;</span>, <span class="st">&quot;#DIV/0!&quot;</span>, <span class="st">&quot;&quot;</span>))</code></pre></div>
+<h3 id="data-partition">2. Data partition</h3>
+<h4 id="i-use-60-of-the-train-data-as-training-set-ptrain-and-40-if-the-train-data-as-validation-set-pval.">I use 60% of the &quot;train&quot; data as training set (ptrain) and 40% if the &quot;train&quot; data as validation set (pval).</h4>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">inTrain &lt;-<span class="st"> </span><span class="kw">createDataPartition</span>(<span class="dt">y =</span> train$classe, <span class="dt">p =</span> <span class="fl">0.6</span>, <span class="dt">list =</span> <span class="ot">FALSE</span>)
+ptrain &lt;-<span class="st"> </span>train[inTrain, ]
+pval &lt;-<span class="st"> </span>train[-inTrain, ]</code></pre></div>
+<h3 id="data-cleaning">3. Data cleaning</h3>
+<h4 id="remove-the-variables-with-near-zero-variance.">Remove the variables with near zero variance.</h4>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">nzv &lt;-<span class="st"> </span><span class="kw">nearZeroVar</span>(ptrain, <span class="dt">saveMetrics =</span> <span class="ot">TRUE</span>)
+ptrain &lt;-<span class="st"> </span>ptrain[, nzv$nzv ==<span class="st"> </span><span class="ot">FALSE</span>]
+pval &lt;-<span class="st"> </span>pval[, nzv$nzv ==<span class="st"> </span><span class="ot">FALSE</span>]</code></pre></div>
+<h4 id="remove-the-variables-with-mostly-na-values-95-of-the-values-are-labeled-with-na.">Remove the variables with mostly NA values (&gt;95% of the values are labeled with NA).</h4>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">mostlyNA &lt;-<span class="st"> </span><span class="kw">sapply</span>(ptrain, function(x) <span class="kw">mean</span>(<span class="kw">is.na</span>(x))) &gt;<span class="st"> </span><span class="fl">0.95</span>
+ptrain &lt;-<span class="st"> </span>ptrain[, mostlyNA ==<span class="st"> </span><span class="ot">FALSE</span>]
+pval &lt;-<span class="st"> </span>pval[, mostlyNA ==<span class="st"> </span><span class="ot">FALSE</span>]</code></pre></div>
+<h4 id="remove-the-first-five-variables-that-are-not-relavent-to-the-prediciton-of-classe.">Remove the first five variables that are not relavent to the prediciton of classe.</h4>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">names</span>(ptrain)[<span class="dv">1</span>:<span class="dv">5</span>]</code></pre></div>
+<pre><code>## [1] &quot;X&quot;                    &quot;user_name&quot;            &quot;raw_timestamp_part_1&quot;
+## [4] &quot;raw_timestamp_part_2&quot; &quot;cvtd_timestamp&quot;</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">ptrain &lt;-<span class="st"> </span>ptrain[, -(<span class="dv">1</span>:<span class="dv">5</span>)]
+pval &lt;-<span class="st"> </span>pval[, -(<span class="dv">1</span>:<span class="dv">5</span>)]</code></pre></div>
+<h4 id="note-that-i-choose-the-features-to-be-removed-from-only-ptrain-set-and-the-pval-set-is-not-seen-so-the-out-of-sample-error-will-not-be-underestimated.-then-i-remove-those-features-in-both-ptrain-and-pval-set">Note that I choose the features to be removed from only ptrain set, and the pval set is not seen, so the out-of-sample error will not be underestimated. Then I remove those features in both ptrain and pval set。</h4>
+<h3 id="model-building">4. Model building</h3>
+<h4 id="here-i-build-models-to-predict-the-classe-from-the-predictors.-the-in-sample-error-is-estimated-from-the-ptrain-set-and-the-out-sample-error-is-estimated-from-the-pval-set.-the-model-with-the-smallest-out-sample-error-is-selected.">Here I build models to predict the classe from the predictors. The in-sample-error is estimated from the ptrain set and the out-sample-error is estimated from the pval set. The model with the smallest out-sample-error is selected.</h4>
+<h4 id="first-i-fit-a-random-forest-model-to-ptrain-set-and-use-3-fold-cross-validation-tp-find-the-optimal-tuning-parameters.">First I fit a random forest model to ptrain set, and use 3-fold cross validation tp find the optimal tuning parameters.</h4>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">fitControl &lt;-<span class="st"> </span><span class="kw">trainControl</span>(<span class="dt">method =</span> <span class="st">&quot;cv&quot;</span>, <span class="dt">number =</span> <span class="dv">3</span>, <span class="dt">verboseIter =</span> <span class="ot">FALSE</span>)
+fit_rf &lt;-<span class="st"> </span><span class="kw">train</span>(classe ~<span class="st"> </span>., <span class="dt">data =</span> ptrain, <span class="dt">method =</span> <span class="st">&quot;rf&quot;</span>, <span class="dt">trControl =</span> fitControl)
+fit_rf$finalModel</code></pre></div>
+<pre><code>## 
+## Call:
+##  randomForest(x = x, y = y, mtry = param$mtry) 
+##                Type of random forest: classification
+##                      Number of trees: 500
+## No. of variables tried at each split: 27
+## 
+##         OOB estimate of  error rate: 0.31%
+## Confusion matrix:
+##      A    B    C    D    E  class.error
+## A 3347    0    0    0    1 0.0002986858
+## B    5 2270    3    1    0 0.0039491005
+## C    0    7 2045    2    0 0.0043816943
+## D    0    0    8 1921    1 0.0046632124
+## E    0    1    0    7 2157 0.0036951501</code></pre>
+<h4 id="the-in-sample-error-of-random-forest-model-is-0.31">The in-sample-error of random forest model is 0.31%</h4>
+<h4 id="then-i-fit-a-gradient-boosted-model-to-ptrain-set-and-use-3-fold-cross-validation-tp-find-the-optimal-tuning-parameters.">Then I fit a gradient boosted model to ptrain set, and use 3-fold cross validation tp find the optimal tuning parameters.</h4>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">fitControl &lt;-<span class="st"> </span><span class="kw">trainControl</span>(<span class="dt">method =</span> <span class="st">&quot;cv&quot;</span>, <span class="dt">number =</span> <span class="dv">3</span>, <span class="dt">verboseIter =</span> <span class="ot">FALSE</span>)
+fit_boost &lt;-<span class="st"> </span><span class="kw">train</span>(classe ~<span class="st"> </span>., <span class="dt">data =</span> ptrain, <span class="dt">method =</span> <span class="st">&quot;gbm&quot;</span>,<span class="dt">trControl =</span> fitControl)</code></pre></div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">fit_boost</code></pre></div>
+<pre><code>## Stochastic Gradient Boosting 
+## 
+## 11776 samples
+##    53 predictor
+##     5 classes: &#39;A&#39;, &#39;B&#39;, &#39;C&#39;, &#39;D&#39;, &#39;E&#39; 
+## 
+## No pre-processing
+## Resampling: Cross-Validated (3 fold) 
+## Summary of sample sizes: 7852, 7850, 7850 
+## Resampling results across tuning parameters:
+## 
+##   interaction.depth  n.trees  Accuracy   Kappa      Accuracy SD
+##   1                   50      0.7579845  0.6929221  0.011314309
+##   1                  100      0.8322874  0.7877069  0.007735681
+##   1                  150      0.8705852  0.8361918  0.006649749
+##   2                   50      0.8774633  0.8447482  0.004324310
+##   2                  100      0.9356319  0.9185361  0.006393220
+##   2                  150      0.9577956  0.9465989  0.003612193
+##   3                   50      0.9307063  0.9122993  0.004672905
+##   3                  100      0.9679852  0.9594947  0.003898674
+##   3                  150      0.9829311  0.9784082  0.004005259
+##   Kappa SD   
+##   0.014359466
+##   0.009763753
+##   0.008414882
+##   0.005497400
+##   0.008106469
+##   0.004566373
+##   0.005946526
+##   0.004933611
+##   0.005067190
+## 
+## Tuning parameter &#39;shrinkage&#39; was held constant at a value of 0.1
+## 
+## Tuning parameter &#39;n.minobsinnode&#39; was held constant at a value of 10
+## Accuracy was used to select the optimal model using  the largest value.
+## The final values used for the model were n.trees = 150,
+##  interaction.depth = 3, shrinkage = 0.1 and n.minobsinnode = 10.</code></pre>
+<h4 id="the-in-sample-error-of-gradient-boosted-model-is-1---0.9829-1.71.-both-models-show-minimal-error-rates-and-the-random-forest-model-is-even-better.-next-i-will-evaluate-the-two-models-on-validation-set-to-estimate-the-out-sample-error-and-select-the-best-model.">The in-sample-error of gradient boosted model is 1 - 0.9829 = 1.71%. Both models show minimal error rates, and the random forest model is even better. Next, I will evaluate the two models on validation set to estimate the out-sample-error and select the best model.</h4>
+<h3 id="model-evaluation-and-selection">5. Model evaluation and selection</h3>
+<h4 id="i-fit-the-models-to-validation-set-and-use-the-confusion-matrix-to-examine-the-accuracy.">I fit the models to validation set, and use the confusion matrix to examine the accuracy.</h4>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">## Random forest model
+preds_rf &lt;-<span class="st"> </span><span class="kw">predict</span>(fit_rf, <span class="dt">newdata =</span> pval)
+<span class="kw">confusionMatrix</span>(pval$classe, preds_rf)</code></pre></div>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 2232    0    0    0    0
+##          B    1 1515    2    0    0
+##          C    0    1 1364    3    0
+##          D    0    0    6 1280    0
+##          E    0    0    0    5 1437
+## 
+## Overall Statistics
+##                                           
+##                Accuracy : 0.9977          
+##                  95% CI : (0.9964, 0.9986)
+##     No Information Rate : 0.2846          
+##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16       
+##                                           
+##                   Kappa : 0.9971          
+##  Mcnemar&#39;s Test P-Value : NA              
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity            0.9996   0.9993   0.9942   0.9938   1.0000
+## Specificity            1.0000   0.9995   0.9994   0.9991   0.9992
+## Pos Pred Value         1.0000   0.9980   0.9971   0.9953   0.9965
+## Neg Pred Value         0.9998   0.9998   0.9988   0.9988   1.0000
+## Prevalence             0.2846   0.1932   0.1749   0.1642   0.1832
+## Detection Rate         0.2845   0.1931   0.1738   0.1631   0.1832
+## Detection Prevalence   0.2845   0.1935   0.1744   0.1639   0.1838
+## Balanced Accuracy      0.9998   0.9994   0.9968   0.9964   0.9996</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">## Gradient boosted model
+preds_boost &lt;-<span class="st"> </span><span class="kw">predict</span>(fit_boost, <span class="dt">newdata =</span> pval)
+<span class="kw">confusionMatrix</span>(pval$classe, preds_boost)</code></pre></div>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 2227    3    0    2    0
+##          B   14 1490   12    2    0
+##          C    0    9 1356    3    0
+##          D    0    2   11 1272    1
+##          E    1    8    2   16 1415
+## 
+## Overall Statistics
+##                                           
+##                Accuracy : 0.989           
+##                  95% CI : (0.9865, 0.9912)
+##     No Information Rate : 0.2858          
+##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16       
+##                                           
+##                   Kappa : 0.9861          
+##  Mcnemar&#39;s Test P-Value : NA              
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity            0.9933   0.9854   0.9819   0.9822   0.9993
+## Specificity            0.9991   0.9956   0.9981   0.9979   0.9958
+## Pos Pred Value         0.9978   0.9816   0.9912   0.9891   0.9813
+## Neg Pred Value         0.9973   0.9965   0.9961   0.9965   0.9998
+## Prevalence             0.2858   0.1927   0.1760   0.1651   0.1805
+## Detection Rate         0.2838   0.1899   0.1728   0.1621   0.1803
+## Detection Prevalence   0.2845   0.1935   0.1744   0.1639   0.1838
+## Balanced Accuracy      0.9962   0.9905   0.9900   0.9901   0.9975</code></pre>
+<h4 id="the-accuracy-of-random-forest-model-is-99.77-and-that-of-gradient-boosted-model-98.94.-both-model-show-excellent-accuracy-on-the-unseen-validation-set-and-again-random-forest-model-is-even-better.-thus-in-the-following-section-i-will-fit-the-random-forest-model-to-the-whole-training-set-train-and-predict-the-classes-of-testing-set-test.">The accuracy of random forest model is 99.77%, and that of gradient boosted model 98.94%. Both model show excellent accuracy on the unseen validation set, and again random forest model is even better. Thus, in the following section I will fit the random forest model to the whole training set (&quot;train&quot;) and predict the classes of testing set (&quot;test&quot;).</h4>
+<h3 id="predicting-classes-of-testing-set-using-random-forest-model">6. Predicting classes of testing set using random forest model</h3>
+<h4 id="fit-the-random-forest-model-to-the-whole-training-set-train-and-predict-the-classes-of-testing-set-test.">Fit the random forest model to the whole training set (&quot;train&quot;) and predict the classes of testing set (&quot;test&quot;).</h4>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">nzv &lt;-<span class="st"> </span><span class="kw">nearZeroVar</span>(train)
+train &lt;-<span class="st"> </span>train[, -nzv]
+test &lt;-<span class="st"> </span>test[, -nzv]
+mostlyNA &lt;-<span class="st"> </span><span class="kw">sapply</span>(train, function(x) <span class="kw">mean</span>(<span class="kw">is.na</span>(x))) &gt;<span class="st"> </span><span class="fl">0.95</span>
+train &lt;-<span class="st"> </span>train[, mostlyNA ==<span class="st"> </span><span class="ot">FALSE</span>]
+test &lt;-<span class="st"> </span>test[, mostlyNA ==<span class="st"> </span><span class="ot">FALSE</span>]
+train &lt;-<span class="st"> </span>train[, -(<span class="dv">1</span>:<span class="dv">5</span>)]
+test &lt;-<span class="st"> </span>test[, -(<span class="dv">1</span>:<span class="dv">5</span>)]
+fitControl &lt;-<span class="st"> </span><span class="kw">trainControl</span>(<span class="dt">method =</span> <span class="st">&quot;cv&quot;</span>, <span class="dt">number =</span> <span class="dv">3</span>, <span class="dt">verboseIter =</span> <span class="ot">FALSE</span>)
+fit &lt;-<span class="st"> </span><span class="kw">train</span>(classe ~<span class="st"> </span>., <span class="dt">data =</span> train, <span class="dt">method =</span> <span class="st">&quot;rf&quot;</span>, <span class="dt">trControl =</span> fitControl)
+preds &lt;-<span class="st"> </span><span class="kw">predict</span>(fit, <span class="dt">newdata =</span> test)
+preds &lt;-<span class="st"> </span><span class="kw">as.character</span>(preds)</code></pre></div>
+<h4 id="finally-i-output-the-predictions.">Finally I output the predictions.</h4>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">pml_write_files &lt;-<span class="st"> </span>function(x) {
+  n &lt;-<span class="st"> </span><span class="kw">length</span>(x)
+  for(i in <span class="dv">1</span>:n) {
+    filename &lt;-<span class="st"> </span><span class="kw">paste0</span>(<span class="st">&quot;problem_id_&quot;</span>, i, <span class="st">&quot;.txt&quot;</span>)
+    <span class="kw">write.table</span>(x[i], <span class="dt">file =</span> filename, <span class="dt">quote =</span> <span class="ot">FALSE</span>, <span class="dt">row.names =</span> <span class="ot">FALSE</span>, <span class="dt">col.names =</span> <span class="ot">FALSE</span>)
+  }
+}
+<span class="kw">pml_write_files</span>(preds)</code></pre></div>
